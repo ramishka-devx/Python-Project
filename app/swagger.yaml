@@ -1,0 +1,1187 @@
+
+swagger: "2.0"
+info:
+  title: "Banking API"
+  description: "API documentation for the Banking application."
+  version: "1.0.0"
+host: "localhost:5000"
+basePath: "/api"
+schemes:
+  - "http"
+tags:
+  - name: "Authentication"
+    description: "Endpoints related to user authentication"
+  - name: "Admin"
+    description: "Admin-only endpoints"
+  - name: "Accounts"
+    description: "Endpoints related to user bank accounts"
+  - name: "Transactions"
+    description: "Endpoints related to transactions"
+
+securityDefinitions:
+  Bearer:
+    type: apiKey
+    name: Authorization
+    in: header
+    description: "Enter your JWT token in the format **Bearer &lt;token&gt;**"
+
+paths:
+  /auth/register:
+    post:
+      summary: "Register a new user"
+      description: "Endpoint to register a new user with email, password, and optional first/last name."
+      tags:
+        - "Authentication"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          description: "User registration details"
+          schema:
+            type: "object"
+            required:
+              - email
+              - password
+            properties:
+              email:
+                type: "string"
+                format: "email"
+                example: "user@example.com"
+              password:
+                type: "string"
+                format: "password"
+                example: "SecurePassword123!"
+              username:
+                type: "string"
+                example: "user123"
+              first_name:
+                type: "string"
+                example: "John"
+              last_name:
+                type: "string"
+                example: "Doe"
+      responses:
+        201:
+          description: "User registered successfully"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "User registered successfully"
+              user:
+                type: "object"
+                properties:
+                  id:
+                    type: "integer"
+                    example: 1
+                  username:
+                    type: "string"
+                    example: "user123"
+                  email:
+                    type: "string"
+                    example: "user@example.com"
+                  first_name:
+                    type: "string"
+                    example: "John"
+                  last_name:
+                    type: "string"
+                    example: "Doe"
+        400:
+          description: "Validation error"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Missing required fields"
+        409:
+          description: "Conflict error"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Email already exists"
+
+  /auth/login:
+    post:
+      summary: "User Login"
+      description: "Authenticate a user and return access and refresh tokens."
+      tags:
+        - "Authentication"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          description: "User login credentials"
+          schema:
+            type: "object"
+            required:
+              - password
+            properties:
+              email:
+                type: "string"
+                format: "email"
+                example: "user@example.com"
+              username:
+                type: "string"
+                example: "user123"
+              password:
+                type: "string"
+                format: "password"
+                example: "SecurePassword123!"
+      responses:
+        200:
+          description: "Login successful"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Login successful"
+              token:
+                type: "string"
+                example: "access_token_here"
+              refresh_token:
+                type: "string"
+                example: "refresh_token_here"
+        401:
+          description: "Invalid credentials"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Invalid credentials"
+
+  /auth/users:
+    get:
+      summary: "Get All Users"
+      description: "Retrieve a list of all users (Admin-only)."
+      tags:
+        - "Admin"
+      security:
+        - Bearer: []
+      responses:
+        200:
+          description: "List of users"
+          schema:
+            type: "array"
+            items:
+              type: "object"
+              properties:
+                id:
+                  type: "integer"
+                  example: 1
+                username:
+                  type: "string"
+                  example: "user123"
+                email:
+                  type: "string"
+                  example: "user@example.com"
+                first_name:
+                  type: "string"
+                  example: "John"
+                last_name:
+                  type: "string"
+                  example: "Doe"
+        403:
+          description: "Forbidden - Admin role required"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Role admin required"
+
+  /auth/user/{user_id}:
+    delete:
+      summary: "Delete a User"
+      description: "Delete a user by ID (Admin-only)."
+      tags:
+        - "Admin"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "path"
+          name: "user_id"
+          required: true
+          description: "ID of the user to delete"
+          type: "integer"
+      responses:
+        200:
+          description: "User deleted successfully"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "User deleted successfully"
+        404:
+          description: "User not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "User not found"
+        403:
+          description: "Forbidden - Admin role required"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Role admin required"
+
+  /auth/refresh:
+    post:
+      summary: "Refresh Token"
+      description: "Endpoint to refresh token using refresh token in request header."
+      tags:
+        - "Authentication"
+      security:
+        - Bearer: []
+      responses:
+        200:
+          description: "Token refreshed successfully"
+          schema:
+            type: "object"
+            properties:
+              token:
+                type: "string"
+                example: "new_access_token_here"
+              refresh_token:
+                type: "string"
+                example: "new_refresh_token_here"
+        401:
+          description: "Invalid or expired refresh token"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Invalid token identity"
+
+  /auth/logout:
+    post:
+      summary: "Logout User"
+      description: "Endpoint to log out user by revoking their JWT token."
+      tags:
+        - "Authentication"
+      security:
+        - Bearer: []
+      responses:
+        200:
+          description: "Successfully logged out"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Successfully logged out"
+
+  /auth/profile:
+    get:
+      summary: "Get User Profile"
+      description: "Retrieve the authenticated user's profile."
+      tags:
+        - "Authentication"
+      security:
+        - Bearer: []
+      responses:
+        200:
+          description: "User profile retrieved successfully"
+          schema:
+            type: "object"
+            properties:
+              id:
+                type: "integer"
+                example: 1
+              username:
+                type: "string"
+                example: "user123"
+              email:
+                type: "string"
+                example: "user@example.com"
+              first_name:
+                type: "string"
+                example: "John"
+              last_name:
+                type: "string"
+                example: "Doe"
+        404:
+          description: "User not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "User not found"
+
+  /auth/verify:
+    post:
+      summary: "Verify Token"
+      description: "Verify if a token is valid and not expired."
+      tags:
+        - "Authentication"
+      security:
+        - Bearer: []
+      responses:
+        200:
+          description: "Token is valid"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Token is valid"
+              verified:
+                type: "boolean"
+                example: true
+
+  /auth/change-password:
+    post:
+      summary: "Change Password"
+      description: "Endpoint to change a user's password."
+      tags:
+        - "Authentication"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          description: "Password change details"
+          schema:
+            type: "object"
+            required:
+              - current_password
+              - new_password
+            properties:
+              current_password:
+                type: "string"
+                format: "password"
+                example: "OldPassword123!"
+              new_password:
+                type: "string"
+                format: "password"
+                example: "NewSecurePassword123!"
+      responses:
+        200:
+          description: "Password changed successfully"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Password changed successfully"
+        401:
+          description: "Current password is incorrect"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Current password is incorrect"
+        400:
+          description: "New password does not meet complexity requirements"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "New password must meet complexity requirements"
+  /accounts:
+    get:
+      summary: "Get User Accounts"
+      description: "Retrieve a list of accounts for the authenticated user."
+      tags:
+        - "Accounts"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "query"
+          name: "page"
+          type: "integer"
+          description: "Page number for pagination"
+          example: 1
+        - in: "query"
+          name: "per_page"
+          type: "integer"
+          description: "Number of accounts per page"
+          example: 10
+        - in: "query"
+          name: "type"
+          type: "string"
+          description: "Filter accounts by type (e.g., savings, checking)"
+          example: "savings"
+      responses:
+        200:
+          description: "List of user accounts"
+          schema:
+            type: "object"
+            properties:
+              account_listing:
+                type: "array"
+                items:
+                  type: "object"
+                  properties:
+                    id:
+                      type: "integer"
+                      example: 1
+                    category:
+                      type: "string"
+                      example: "savings"
+                    label:
+                      type: "string"
+                      example: "My Savings Account"
+                    balance:
+                      type: "number"
+                      format: "float"
+                      example: 1000.5
+              page:
+                type: "integer"
+                example: 1
+              per_page:
+                type: "integer"
+                example: 10
+              total:
+                type: "integer"
+                example: 2
+
+    post:
+      summary: "Create a New Account"
+      description: "Create a new account for the authenticated user."
+      tags:
+        - "Accounts"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          description: "Account creation details"
+          schema:
+            type: "object"
+            required:
+              - account_type
+              - account_name
+            properties:
+              account_type:
+                type: "string"
+                example: "savings"
+              account_name:
+                type: "string"
+                example: "My Savings Account"
+              initial_balance:
+                type: "number"
+                format: "float"
+                example: 500.0
+              description:
+                type: "string"
+                example: "This is my savings account."
+      responses:
+        201:
+          description: "Account created successfully"
+          schema:
+            type: "object"
+            properties:
+              id:
+                type: "integer"
+                example: 1
+              category:
+                type: "string"
+                example: "savings"
+              label:
+                type: "string"
+                example: "My Savings Account"
+              balance:
+                type: "number"
+                format: "float"
+                example: 500.0
+              message:
+                type: "string"
+                example: "Account created successfully"
+
+  /accounts/{account_id}:
+    get:
+      summary: "Get Account Details"
+      description: "Retrieve details of a specific account by its ID."
+      tags:
+        - "Accounts"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "path"
+          name: "account_id"
+          required: true
+          type: "integer"
+          description: "ID of the account to retrieve"
+      responses:
+        200:
+          description: "Account details retrieved successfully"
+          schema:
+            type: "object"
+            properties:
+              account_detail:
+                type: "object"
+                properties:
+                  id:
+                    type: "integer"
+                    example: 1
+                  category:
+                    type: "string"
+                    example: "savings"
+                  label:
+                    type: "string"
+                    example: "My Savings Account"
+                  balance:
+                    type: "number"
+                    format: "float"
+                    example: 1000.5
+              balance:
+                type: "number"
+                format: "float"
+                example: 1000.5
+        404:
+          description: "Account not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Account not found"
+
+    put:
+      summary: "Update Account"
+      description: "Update details of a specific account by its ID."
+      tags:
+        - "Accounts"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "path"
+          name: "account_id"
+          required: true
+          type: "integer"
+          description: "ID of the account to update"
+        - in: "body"
+          name: "body"
+          required: true
+          description: "Account update details"
+          schema:
+            type: "object"
+            properties:
+              account_label:
+                type: "string"
+                example: "Updated Account Name"
+              description:
+                type: "string"
+                example: "Updated account description."
+      responses:
+        200:
+          description: "Account updated successfully"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Account updated successfully"
+              account_detail:
+                type: "object"
+                properties:
+                  id:
+                    type: "integer"
+                    example: 1
+                  category:
+                    type: "string"
+                    example: "savings"
+                  label:
+                    type: "string"
+                    example: "Updated Account Name"
+                  balance:
+                    type: "number"
+                    format: "float"
+                    example: 1000.5
+        404:
+          description: "Account not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Account not found or access denied"
+
+    delete:
+      summary: "Delete Account"
+      description: "Soft delete an account by its ID."
+      tags:
+        - "Accounts"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "path"
+          name: "account_id"
+          required: true
+          type: "integer"
+          description: "ID of the account to delete"
+      responses:
+        200:
+          description: "Account deletion processed"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Account deletion processed"
+        404:
+          description: "Account not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Account not found or access denied"
+
+  /accounts/{account_id}/transactions:
+    get:
+      summary: "Get Account Transactions"
+      description: "Retrieve a list of transactions for a specific account."
+      tags:
+        - "Accounts"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "path"
+          name: "account_id"
+          required: true
+          type: "integer"
+          description: "ID of the account to retrieve transactions for"
+        - in: "query"
+          name: "start_date"
+          type: "string"
+          format: "date"
+          description: "Filter transactions from this date (YYYY-MM-DD)"
+          example: "2023-01-01"
+        - in: "query"
+          name: "end_date"
+          type: "string"
+          format: "date"
+          description: "Filter transactions up to this date (YYYY-MM-DD)"
+          example: "2023-12-31"
+        - in: "query"
+          name: "type"
+          type: "string"
+          description: "Filter transactions by type (deposit, withdrawal, transfer)"
+          example: "deposit"
+        - in: "query"
+          name: "search"
+          type: "string"
+          description: "Search transactions by description"
+          example: "groceries"
+        - in: "query"
+          name: "page"
+          type: "integer"
+          description: "Page number for pagination"
+          example: 1
+        - in: "query"
+          name: "per_page"
+          type: "integer"
+          description: "Number of transactions per page"
+          example: 20
+      responses:
+        200:
+          description: "List of transactions"
+          schema:
+            type: "object"
+            properties:
+              transactions:
+                type: "array"
+                items:
+                  type: "object"
+                  properties:
+                    id:
+                      type: "integer"
+                      example: 1
+                    description:
+                      type: "string"
+                      example: "Grocery shopping"
+                    amount:
+                      type: "number"
+                      format: "float"
+                      example: 50.0
+                    timestamp:
+                      type: "string"
+                      format: "date-time"
+                      example: "2023-01-01T12:00:00Z"
+              pg:
+                type: "integer"
+                example: 1
+              per_pg:
+                type: "integer"
+                example: 20
+              total_items:
+                type: "integer"
+                example: 100
+        404:
+          description: "Account not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Account not found"
+
+  /transactions:
+    get:
+      summary: "Get Transaction History"
+      description: "Retrieve the transaction history for all accounts belonging to the authenticated user."
+      tags:
+        - "Transactions"
+      security:
+        - Bearer: []
+      responses:
+        200:
+          description: "List of transactions"
+          schema:
+            type: "object"
+            properties:
+              transactions:
+                type: "array"
+                items:
+                  type: "object"
+                  properties:
+                    id:
+                      type: "integer"
+                      example: 1
+                    transaction_type:
+                      type: "string"
+                      example: "deposit"
+                    amount:
+                      type: "number"
+                      format: "float"
+                      example: 100.0
+                    timestamp:
+                      type: "string"
+                      format: "date-time"
+                      example: "2023-01-01T12:00:00Z"
+                    description:
+                      type: "string"
+                      example: "Grocery shopping"
+                    from_account_id:
+                      type: "integer"
+                      example: 1
+                    to_account_id:
+                      type: "integer"
+                      example: 2
+
+  /transactions/deposit:
+    post:
+      summary: "Deposit Funds"
+      description: "Deposit funds into a specific account."
+      tags:
+        - "Transactions"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          description: "Details of the deposit transaction"
+          schema:
+            type: "object"
+            required:
+              - account_id
+              - amount
+            properties:
+              account_id:
+                type: "integer"
+                example: 1
+              amount:
+                type: "number"
+                format: "float"
+                example: 100.0
+              description:
+                type: "string"
+                example: "Deposit for savings"
+      responses:
+        200:
+          description: "Deposit successful"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Deposit successful"
+              transaction:
+                type: "object"
+                properties:
+                  id:
+                    type: "integer"
+                    example: 1
+                  transaction_type:
+                    type: "string"
+                    example: "deposit"
+                  amount:
+                    type: "number"
+                    format: "float"
+                    example: 100.0
+                  timestamp:
+                    type: "string"
+                    format: "date-time"
+                    example: "2023-01-01T12:00:00Z"
+              new_balance:
+                type: "number"
+                format: "float"
+                example: 500.0
+
+  /transactions/withdraw:
+    post:
+      summary: "Withdraw Funds"
+      description: "Withdraw funds from a specific account."
+      tags:
+        - "Transactions"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          description: "Details of the withdrawal transaction"
+          schema:
+            type: "object"
+            required:
+              - account_id
+              - amount
+            properties:
+              account_id:
+                type: "integer"
+                example: 1
+              amount:
+                type: "number"
+                format: "float"
+                example: 50.0
+              description:
+                type: "string"
+                example: "Withdrawal for groceries"
+      responses:
+        200:
+          description: "Withdrawal successful"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Withdrawal successful"
+              transaction:
+                type: "object"
+                properties:
+                  id:
+                    type: "integer"
+                    example: 1
+                  transaction_type:
+                    type: "string"
+                    example: "withdrawal"
+                  amount:
+                    type: "number"
+                    format: "float"
+                    example: 50.0
+                  timestamp:
+                    type: "string"
+                    format: "date-time"
+                    example: "2023-01-01T12:00:00Z"
+              new_balance:
+                type: "number"
+                format: "float"
+                example: 450.0
+
+  /transactions/transfer:
+    post:
+      summary: "Transfer Funds"
+      description: "Transfer funds between two accounts."
+      tags:
+        - "Transactions"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          description: "Details of the transfer transaction"
+          schema:
+            type: "object"
+            required:
+              - from_account_id
+              - to_account_id
+              - amount
+            properties:
+              from_account_id:
+                type: "integer"
+                example: 1
+              to_account_id:
+                type: "integer"
+                example: 2
+              amount:
+                type: "number"
+                format: "float"
+                example: 200.0
+              description:
+                type: "string"
+                example: "Transfer to savings account"
+      responses:
+        200:
+          description: "Transfer successful"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Transfer successful"
+              transaction:
+                type: "object"
+                properties:
+                  id:
+                    type: "integer"
+                    example: 1
+                  transaction_type:
+                    type: "string"
+                    example: "transfer"
+                  amount:
+                    type: "number"
+                    format: "float"
+                    example: 200.0
+                  timestamp:
+                    type: "string"
+                    format: "date-time"
+                    example: "2023-01-01T12:00:00Z"
+              from_account_balance:
+                type: "number"
+                format: "float"
+                example: 800.0
+              to_account_balance:
+                type: "number"
+                format: "float"
+                example: 1200.0
+
+  /transactions/transfer-advanced:
+    post:
+      summary: "Advanced Transfer Funds"
+      description: "Transfer funds between accounts with additional flexibility."
+      tags:
+        - "Transactions"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          description: "Details of the advanced transfer transaction"
+          schema:
+            type: "object"
+            required:
+              - from_account_id
+              - to_account_id
+              - amount
+            properties:
+              from_account_id:
+                type: "integer"
+                example: 1
+              to_account_id:
+                type: "integer"
+                example: 2
+              amount:
+                type: "number"
+                format: "float"
+                example: 300.0
+              description:
+                type: "string"
+                example: "Advanced transfer to another account"
+      responses:
+        200:
+          description: "Advanced transfer successful"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Transfer successful"
+              transaction:
+                type: "object"
+                properties:
+                  id:
+                    type: "integer"
+                    example: 1
+                  transaction_type:
+                    type: "string"
+                    example: "transfer"
+                  amount:
+                    type: "number"
+                    format: "float"
+                    example: 300.0
+                  timestamp:
+                    type: "string"
+                    format: "date-time"
+                    example: "2023-01-01T12:00:00Z"
+              from_account_balance:
+                type: "number"
+                format: "float"
+                example: 700.0
+              to_account_balance:
+                type: "number"
+                format: "float"
+                example: 1300.0
+        400:
+          description: "Invalid request or insufficient funds"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Insufficient funds or invalid request"
+        404:
+          description: "Account not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Source or destination account not found"
+
+  /transactions/accounts/{account_id}/transactions:
+    get:
+      summary: "Get Transactions for a Specific Account"
+      description: "Retrieve a list of transactions for a specific account."
+      tags:
+        - "Transactions"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "path"
+          name: "account_id"
+          required: true
+          type: "integer"
+          description: "ID of the account to retrieve transactions for"
+      responses:
+        200:
+          description: "List of transactions for the account"
+          schema:
+            type: "object"
+            properties:
+              transactions:
+                type: "array"
+                items:
+                  type: "object"
+                  properties:
+                    id:
+                      type: "integer"
+                      example: 1
+                    transaction_type:
+                      type: "string"
+                      example: "deposit"
+                    amount:
+                      type: "number"
+                      format: "float"
+                      example: 100.0
+                    timestamp:
+                      type: "string"
+                      format: "date-time"
+                      example: "2023-01-01T12:00:00Z"
+                    description:
+                      type: "string"
+                      example: "Deposit to savings account"
+        404:
+          description: "Account not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Account not found or does not belong to you"
+
+    post:
+      summary: "Create a Transaction for a Specific Account"
+      description: "Create a new transaction (deposit, withdrawal, or transfer) for a specific account."
+      tags:
+        - "Transactions"
+      security:
+        - Bearer: []
+      parameters:
+        - in: "path"
+          name: "account_id"
+          required: true
+          type: "integer"
+          description: "ID of the account to create a transaction for"
+        - in: "body"
+          name: "body"
+          required: true
+          description: "Details of the transaction"
+          schema:
+            type: "object"
+            required:
+              - type
+              - amount
+            properties:
+              type:
+                type: "string"
+                example: "deposit"
+                description: "Type of transaction (deposit, withdrawal, transfer)"
+              amount:
+                type: "number"
+                format: "float"
+                example: 200.0
+              to_account_id:
+                type: "integer"
+                example: 2
+                description: "Required for transfers"
+              description:
+                type: "string"
+                example: "Deposit to savings account"
+      responses:
+        201:
+          description: "Transaction created successfully"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Deposit successful"
+              transaction:
+                type: "object"
+                properties:
+                  id:
+                    type: "integer"
+                    example: 1
+                  transaction_type:
+                    type: "string"
+                    example: "deposit"
+                  amount:
+                    type: "number"
+                    format: "float"
+                    example: 200.0
+                  timestamp:
+                    type: "string"
+                    format: "date-time"
+                    example: "2023-01-01T12:00:00Z"
+              new_balance:
+                type: "number"
+                format: "float"
+                example: 1200.0
+        400:
+          description: "Invalid request or insufficient funds"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Invalid transaction type or insufficient funds"
+        404:
+          description: "Account not found"
+          schema:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+                example: "Account not found or does not belong to you"
+  
