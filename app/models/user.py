@@ -10,6 +10,7 @@ class User(db.Model):
     last_name = db.Column(db.String(50), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     role = db.Column(db.String(50), nullable=False, default='user')
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
     accounts = db.relationship('Account', backref='owner', lazy=True)
 
     def __init__(self, username, email, password):

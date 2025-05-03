@@ -169,4 +169,29 @@ def create_app(test_config=None):
         db.create_all()
         print('Initialized the database.')
 
+    @app.cli.command('create-admin')
+    def create_admin_command():
+        """Create an admin user."""
+        from app.models.user import User
+        
+        # Check if admin already exists
+        admin = User.query.filter_by(role='admin').first()
+        if admin:
+            print('Admin user already exists.')
+            return
+            
+        # Create admin user
+        admin = User(
+            username='superadmin',
+            email='superadmin@example.com',
+            password='Admin123!'
+        )
+        admin.role = 'admin'
+        admin.first_name = 'Super'
+        admin.last_name = 'Admin'
+        
+        db.session.add(admin)
+        db.session.commit()
+        print('Admin user created successfully.')
+        
     return app 

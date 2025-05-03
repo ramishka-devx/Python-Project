@@ -11,11 +11,25 @@ import re
 from app import db, jwt
 from app.models.user import User
 from app.utils.validators import validate_email, validate_password, error_response
+from functools import wraps
 
 bp = Blueprint("auth", __name__, url_prefix="/api")
 
 # Blocklist for revoked tokens
 token_blocklist = set()
+
+def admin_required(fn):
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user or user.role != 'admin':
+            return error_response("Admin role required", 403)
+            
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 @jwt.token_in_blocklist_loader
@@ -229,3 +243,45 @@ def validate_password_complexity(password):
 
     # Advanced version requires all criteria
     return has_uppercase and has_lowercase and has_digit and has_special
+
+
+@bp.route("/auth/users", methods=["GET"])
+@admin_required
+def get_all_users():
+    """Get a list of all users (Admin-only)"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    
+    # Get paginated users
+    paginated_users = User.query.paginate(page=page, per_page=per_page, error_out=False)
+    
+    users_data = [user.to_dict() for user in paginated_users.items]
+    
+    return jsonify({
+        'users': users_data,
+        'page': page,
+        'per_page': per_page,
+        'total': paginated_users.total
+    })
+
+@bp.route("/auth/user/<int:user_id>", methods=["DELETE"])
+@admin_required
+def delete_user(user_id):
+    """Delete a user by ID (Admin-only)"""
+    # Prevent admin from deleting themselves
+    current_user_id = get_jwt_identity()
+    if user_id == current_user_id:
+        return error_response("Cannot delete your own account", 400)
+    
+    user = User.query.get(user_id)
+    if not user:
+        return error_response("User not found", 404)
+    
+    try:
+        # Soft delete the user
+        user.is_active = False
+        db.session.commit()
+        return jsonify({"message": "User deleted successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to delete user: {str(e)}", 500)
