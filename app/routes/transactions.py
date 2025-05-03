@@ -4,8 +4,22 @@ from app import db
 from app.models.account import Account
 from app.models.transaction import Transaction
 from app.utils.validators import validate_amount, error_response
+from decimal import Decimal
+from sqlalchemy.exc import SQLAlchemyError
 
 bp = Blueprint('transactions', __name__, url_prefix='/api/transactions')
+
+def validate_transaction_amount(amount):
+    """Validate transaction amount is positive and has proper precision"""
+    try:
+        amount = Decimal(str(amount))
+        if amount <= 0:
+            return False, "Amount must be positive"
+        if amount.as_tuple().exponent < -2:  # More than 2 decimal places
+            return False, "Amount cannot have more than 2 decimal places"
+        return True, amount
+    except (ValueError, TypeError):
+        return False, "Invalid amount format"
 
 @bp.route('', methods=['GET'])
 @jwt_required()
@@ -43,36 +57,50 @@ def deposit():
         return error_response('Account ID and amount are required')
     
     # Validate amount
-    if not validate_amount(data['amount']):
-        return error_response('Amount must be a positive number')
+    is_valid, amount_or_error = validate_transaction_amount(data['amount'])
+    if not is_valid:
+        return error_response(amount_or_error)
     
-    amount = float(data['amount'])
+    amount = amount_or_error
     
-    # Get the account
-    account = Account.query.filter_by(id=data['account_id'], user_id=user_id).first()
-    
-    if not account:
-        return error_response('Account not found or does not belong to you', 404)
-    
-    # Update account balance
-    account.balance += amount
-    
-    # Create transaction record
-    transaction = Transaction(
-        transaction_type='deposit',
-        amount=amount,
-        to_account_id=account.id,
-        description=data.get('description', 'Deposit')
-    )
-    
-    db.session.add(transaction)
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Deposit successful',
-        'transaction': transaction.to_dict(),
-        'new_balance': account.balance
-    })
+    try:
+        # Start transaction
+        db.session.begin_nested()
+        
+        # Get the account with row lock
+        account = Account.query.filter_by(
+            id=data['account_id'], 
+            user_id=user_id,
+            is_active=True
+        ).with_for_update().first()
+        
+        if not account:
+            db.session.rollback()
+            return error_response('Account not found or does not belong to you', 404)
+        
+        # Update account balance
+        account.balance = Decimal(str(account.balance)) + amount
+        
+        # Create transaction record
+        transaction = Transaction(
+            transaction_type='deposit',
+            amount=float(amount),
+            to_account_id=account.id,
+            description=data.get('description', 'Deposit')
+        )
+        
+        db.session.add(transaction)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Deposit successful',
+            'transaction': transaction.to_dict(),
+            'new_balance': float(account.balance)
+        })
+        
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return error_response(f"Transaction failed: {str(e)}", 500)
 
 @bp.route('/withdraw', methods=['POST'])
 @jwt_required(fresh=True)
@@ -86,40 +114,55 @@ def withdraw():
         return error_response('Account ID and amount are required')
     
     # Validate amount
-    if not validate_amount(data['amount']):
-        return error_response('Amount must be a positive number')
+    is_valid, amount_or_error = validate_transaction_amount(data['amount'])
+    if not is_valid:
+        return error_response(amount_or_error)
     
-    amount = float(data['amount'])
+    amount = amount_or_error
     
-    # Get the account
-    account = Account.query.filter_by(id=data['account_id'], user_id=user_id).first()
-    
-    if not account:
-        return error_response('Account not found or does not belong to you', 404)
-    
-    # Check sufficient balance
-    if account.balance < amount:
-        return error_response('Insufficient funds')
-    
-    # Update account balance
-    account.balance -= amount
-    
-    # Create transaction record
-    transaction = Transaction(
-        transaction_type='withdrawal',
-        amount=amount,
-        from_account_id=account.id,
-        description=data.get('description', 'Withdrawal')
-    )
-    
-    db.session.add(transaction)
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Withdrawal successful',
-        'transaction': transaction.to_dict(),
-        'new_balance': account.balance
-    })
+    try:
+        # Start transaction
+        db.session.begin_nested()
+        
+        # Get the account with row lock
+        account = Account.query.filter_by(
+            id=data['account_id'], 
+            user_id=user_id,
+            is_active=True
+        ).with_for_update().first()
+        
+        if not account:
+            db.session.rollback()
+            return error_response('Account not found or does not belong to you', 404)
+        
+        # Check sufficient balance
+        if Decimal(str(account.balance)) < amount:
+            db.session.rollback()
+            return error_response('Insufficient funds')
+        
+        # Update account balance
+        account.balance = Decimal(str(account.balance)) - amount
+        
+        # Create transaction record
+        transaction = Transaction(
+            transaction_type='withdrawal',
+            amount=float(amount),
+            from_account_id=account.id,
+            description=data.get('description', 'Withdrawal')
+        )
+        
+        db.session.add(transaction)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Withdrawal successful',
+            'transaction': transaction.to_dict(),
+            'new_balance': float(account.balance)
+        })
+        
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return error_response(f"Transaction failed: {str(e)}", 500)
 
 @bp.route('/transfer', methods=['POST'])
 @jwt_required(fresh=True)
@@ -133,57 +176,77 @@ def transfer():
         return error_response('From account ID, to account ID, and amount are required')
     
     # Validate amount
-    if not validate_amount(data['amount']):
-        return error_response('Amount must be a positive number')
+    is_valid, amount_or_error = validate_transaction_amount(data['amount'])
+    if not is_valid:
+        return error_response(amount_or_error)
     
-    amount = float(data['amount'])
+    amount = amount_or_error
     
     # Check if accounts are different
     if data['from_account_id'] == data['to_account_id']:
         return error_response('Cannot transfer to the same account')
     
-    # Get the from account and verify ownership
-    from_account = Account.query.filter_by(id=data['from_account_id'], user_id=user_id).first()
-    
-    if not from_account:
-        return error_response('Source account not found or does not belong to you', 404)
-    
-    # Check sufficient balance
-    if from_account.balance < amount:
-        return error_response('Insufficient funds')
-    
-    # Get the to account (doesn't have to belong to the user)
-    to_account = Account.query.get(data['to_account_id'])
-    
-    if not to_account:
-        return error_response('Destination account not found', 404)
-    
-    # Update account balances
-    from_account.balance -= amount
-    to_account.balance += amount
-    
-    # Create transaction record
-    transaction = Transaction(
-        transaction_type='transfer',
-        amount=amount,
-        from_account_id=from_account.id,
-        to_account_id=to_account.id,
-        description=data.get('description', f'Transfer from {from_account.account_number} to {to_account.account_number}')
-    )
-    
-    db.session.add(transaction)
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Transfer successful',
-        'transaction': transaction.to_dict(),
-        'from_account_balance': from_account.balance,
-        'to_account_balance': to_account.balance
-    })
+    try:
+        # Start transaction
+        db.session.begin_nested()
+        
+        # Get the from account with row lock
+        from_account = Account.query.filter_by(
+            id=data['from_account_id'], 
+            user_id=user_id,
+            is_active=True
+        ).with_for_update().first()
+        
+        if not from_account:
+            db.session.rollback()
+            return error_response('Source account not found or does not belong to you', 404)
+        
+        # Get the to account with row lock
+        to_account = Account.query.filter_by(
+            id=data['to_account_id'],
+            is_active=True
+        ).with_for_update().first()
+        
+        if not to_account:
+            db.session.rollback()
+            return error_response('Destination account not found', 404)
+        
+        # Check sufficient balance
+        if Decimal(str(from_account.balance)) < amount:
+            db.session.rollback()
+            return error_response('Insufficient funds')
+        
+        # Update account balances
+        from_account.balance = Decimal(str(from_account.balance)) - amount
+        to_account.balance = Decimal(str(to_account.balance)) + amount
+        
+        # Create transaction record
+        transaction = Transaction(
+            transaction_type='transfer',
+            amount=float(amount),
+            from_account_id=from_account.id,
+            to_account_id=to_account.id,
+            description=data.get('description', f'Transfer from {from_account.account_number} to {to_account.account_number}')
+        )
+        
+        db.session.add(transaction)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Transfer successful',
+            'transaction': transaction.to_dict(),
+            'from_account_balance': float(from_account.balance),
+            'to_account_balance': float(to_account.balance)
+        })
+        
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return error_response(f"Transfer failed: {str(e)}", 500)
 
 @bp.route('/transfer-advanced', methods=['POST'])
 @jwt_required()
 def transfer_advanced():
+    """Advanced transfer with additional validation and error handling"""
     user_id = int(get_jwt_identity())
     data = request.get_json()
     
@@ -192,34 +255,49 @@ def transfer_advanced():
         return error_response('From account ID, to account ID, and amount are required')
     
     # Validate amount
-    if not validate_amount(data['amount']):
-        return error_response('Amount must be a positive number')
+    is_valid, amount_or_error = validate_transaction_amount(data['amount'])
+    if not is_valid:
+        return error_response(amount_or_error)
     
-    amount = float(data['amount'])
-    
-    # Get the accounts
-    from_account = Account.query.filter_by(id=data['from_account_id'], user_id=user_id).first()
-    to_account = Account.query.get(data['to_account_id'])
-    
-    if not from_account:
-        return error_response('Source account not found or does not belong to you', 404)
-    
-    if not to_account:
-        return error_response('Destination account not found', 404)
-    
-    # Check sufficient balance
-    if from_account.balance < amount:
-        return error_response('Insufficient funds')
-    
-    # Update balances
-    from_account.balance -= amount
-    to_account.balance += amount
+    amount = amount_or_error
     
     try:
+        # Start transaction
+        db.session.begin_nested()
+        
+        # Get the accounts with row locks
+        from_account = Account.query.filter_by(
+            id=data['from_account_id'], 
+            user_id=user_id,
+            is_active=True
+        ).with_for_update().first()
+        
+        to_account = Account.query.filter_by(
+            id=data['to_account_id'],
+            is_active=True
+        ).with_for_update().first()
+        
+        if not from_account:
+            db.session.rollback()
+            return error_response('Source account not found or does not belong to you', 404)
+        
+        if not to_account:
+            db.session.rollback()
+            return error_response('Destination account not found', 404)
+        
+        # Check sufficient balance
+        if Decimal(str(from_account.balance)) < amount:
+            db.session.rollback()
+            return error_response('Insufficient funds')
+        
+        # Update balances
+        from_account.balance = Decimal(str(from_account.balance)) - amount
+        to_account.balance = Decimal(str(to_account.balance)) + amount
+        
         # Create transaction record
         transaction = Transaction(
             transaction_type='transfer',
-            amount=amount,
+            amount=float(amount),
             from_account_id=from_account.id,
             to_account_id=to_account.id,
             description=data.get('description', f'Transfer from {from_account.account_number} to {to_account.account_number}')
@@ -227,16 +305,17 @@ def transfer_advanced():
         
         db.session.add(transaction)
         db.session.commit()
-    except Exception as e:
+        
+        return jsonify({
+            'message': 'Transfer successful',
+            'transaction': transaction.to_dict(),
+            'from_account_balance': float(from_account.balance),
+            'to_account_balance': float(to_account.balance)
+        })
+        
+    except SQLAlchemyError as e:
         db.session.rollback()
         return error_response(f"Transfer failed: {str(e)}", 500)
-    
-    return jsonify({
-        'message': 'Transfer successful',
-        'transaction': transaction.to_dict(),
-        'from_account_balance': from_account.balance,
-        'to_account_balance': to_account.balance
-    })
 
 # Add new endpoint for account-specific transactions
 @bp.route('/accounts/<int:account_id>/transactions', methods=['POST', 'GET'])
